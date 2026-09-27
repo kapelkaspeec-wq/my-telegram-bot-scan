@@ -5,7 +5,7 @@ import threading
 from flask import Flask
 
 # Создаем легкое веб-приложение на Flask для Render
-app = Flask(_name_)
+app = Flask(__name__)
 
 @app.route('/')
 def home():
