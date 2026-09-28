@@ -1,4 +1,4 @@
 pyTelegramBotAPI
-google-genai
+openai
 python-docx
 pillow
