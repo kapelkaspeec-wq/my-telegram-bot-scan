@@ -1,7 +1,7 @@
 import os
 import telebot
 from openai import OpenAI
-from docx import Document
+from docxtpl import DocxTemplate
 from PIL import Image
 import json
 import threading
@@ -14,7 +14,7 @@ PROXY_API_KEY = "sk-heg3NF6rDU1VdDOMexnLkGriDfevyw0C"
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
-# Подключаемся к ProxyAPI 
+# Подключаемся к ProxyAPI
 client = OpenAI(
     api_key=PROXY_API_KEY,
     base_url="https://api.proxyapi.ru/openai/v1"
@@ -46,28 +46,25 @@ def encode_image(image_path):
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    bot.reply_to(message, "Бот успешно запущен в облаке! Пришлите фото заполненного бланка.")
+    bot.reply_to(message, "Бот готов! Пришлите фото заполненного бланка.")
 
 @bot.message_handler(content_types=['photo'])
 def handle_photo(message):
-    bot.reply_to(message, "⏳ Распознаю почерк через GPT-4o, подождите пару секунд...")
+    bot.reply_to(message, "⏳ Распознаю почерк и аккуратно заполняю бланк...")
     
     image_path = "temp_blank.jpg"
     fixed_image_path = "fixed_blank.jpg"
     try:
-        # 1. Скачиваем фото из Telegram
         file_info = bot.get_file(message.photo[-1].file_id)
         downloaded_file = bot.download_file(file_info.file_path)
         with open(image_path, 'wb') as new_file:
             new_file.write(downloaded_file)
 
-        # 2. Переводим в правильный формат JPEG
         img = Image.open(image_path)
         if img.mode != 'RGB':
             img = img.convert('RGB')
         img.save(fixed_image_path, "JPEG")
         
-        # 3. Кодируем картинку для отправки
         base64_image = encode_image(fixed_image_path)
 
         prompt = """
@@ -77,7 +74,6 @@ def handle_photo(message):
         Если какое-то поле не заполнено, оставь пустую строку "". Верни ТОЛЬКО чистый JSON, без лишнего текста.
         """
 
-        # 4. Отправляем запрос к GPT-4o через ProxyAPI
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
@@ -97,10 +93,7 @@ def handle_photo(message):
         )
         
         text_response = response.choices[0].message.content.strip()
-        print("\n--- РАСПОЗНАНО ---")
-        print(text_response)
         
-        # 5. Очищаем ответ
         if "{" in text_response and "}" in text_response:
             start = text_response.find("{")
             end = text_response.rfind("}") + 1
@@ -108,31 +101,15 @@ def handle_photo(message):
             
         data = json.loads(text_response)
 
-        # 6. Заполняем документ
-        doc = Document(TEMPLATE_PATH)
-        for key, value in data.items():
-            if not value:
-                continue
-            target_tags = [f"{{{{{key}}}}}", f"{{{key}}}", key]
-            
-            for paragraph in doc.paragraphs:
-                for tag in target_tags:
-                    if tag in paragraph.text:
-                        paragraph.text = paragraph.text.replace(tag, str(value))
-                        
-            for table in doc.tables:
-                for row in table.rows:
-                    for cell in row.cells:
-                        for tag in target_tags:
-                            if tag in cell.text:
-                                cell.text = cell.text.replace(tag, str(value))
-
+        # --- ИДЕАЛЬНОЕ ЗАПОЛНЕНИЕ БЛАНКА ---
+        doc = DocxTemplate(TEMPLATE_PATH)
+        doc.render(data)
+        
         output_filename = "Готовый_бланк.docx"
         doc.save(output_filename)
 
-        # 7. Отправляем готовый файл в Телеграм
         with open(output_filename, 'rb') as doc_file:
-            bot.send_document(message.chat.id, doc_file, caption="✅ Готово! Бланк заполнен.")
+            bot.send_document(message.chat.id, doc_file, caption="✅ Готово! Бланк идеально заполнен.")
 
     except Exception as e:
         bot.reply_to(message, f"❌ Произошла ошибка: {e}")
