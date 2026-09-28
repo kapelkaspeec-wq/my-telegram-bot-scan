@@ -4,6 +4,8 @@ from google import genai
 from docx import Document
 from PIL import Image
 import json
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 # Ключи вставлены напрямую (репозиторий должен быть строго приватным!)
 TELEGRAM_TOKEN = "8870247392:AAH6YYzeFASFwynU4DaPLPC_AjdDswsXItg"
@@ -12,6 +14,25 @@ GEMINI_API_KEY = "AQ.Ab8RN6LapOSCfx1ZsroC7Jvg3xSJ9-dyl5zQ9KHbSz8ZWVlD7A"
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 client = genai.Client(api_key=GEMINI_API_KEY)
 TEMPLATE_PATH = "Бланк автоматической загрузки.docx"
+
+# ==========================================
+# ОБМАНКА ДЛЯ СЕРВЕРА RENDER (чтобы не падал без портов)
+# ==========================================
+class DummyHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/plain')
+        self.end_headers()
+        self.wfile.write(b"Bot is alive and running!")
+
+def keep_alive():
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(('0.0.0.0', port), DummyHandler)
+    server.serve_forever()
+
+# Запускаем обманку в отдельном фоновом потоке
+threading.Thread(target=keep_alive, daemon=True).start()
+# ==========================================
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
