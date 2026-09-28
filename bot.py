@@ -1,22 +1,29 @@
 import os
 import telebot
-from google import genai
+from openai import OpenAI
 from docx import Document
 from PIL import Image
 import json
 import threading
+import base64
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-# Ключи вставлены напрямую (репозиторий должен быть строго приватным!)
+# Ваши рабочие ключи
 TELEGRAM_TOKEN = "8870247392:AAH6YYzeFASFwynU4DaPLPC_AjdDswsXItg"
-GEMINI_API_KEY = "AQ.Ab8RN6LapOSCfx1ZsroC7Jvg3xSJ9-dyl5zQ9KHbSz8ZWVlD7A"
+PROXY_API_KEY = "sk-heg3NF6rDU1VdDOMexnLkGriDfevyw0C"
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
-client = genai.Client(api_key=GEMINI_API_KEY)
+
+# Подключаемся к ProxyAPI (запросы пойдут в Google без VPN)
+client = OpenAI(
+    api_key=PROXY_API_KEY,
+    base_url="https://api.proxyapi.ru/openai/v1"
+)
+
 TEMPLATE_PATH = "Бланк автоматической загрузки.docx"
 
 # ==========================================
-# ОБМАНКА ДЛЯ СЕРВЕРА RENDER (чтобы не падал без портов)
+# ОБМАНКА ДЛЯ СЕРВЕРА RENDER
 # ==========================================
 class DummyHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -30,9 +37,12 @@ def keep_alive():
     server = HTTPServer(('0.0.0.0', port), DummyHandler)
     server.serve_forever()
 
-# Запускаем обманку в отдельном фоновом потоке
 threading.Thread(target=keep_alive, daemon=True).start()
 # ==========================================
+
+def encode_image(image_path):
+    with open(image_path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode('utf-8')
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
@@ -40,7 +50,7 @@ def send_welcome(message):
 
 @bot.message_handler(content_types=['photo'])
 def handle_photo(message):
-    bot.reply_to(message, "⏳ Распознаю почерк через серверы Google, подождите пару секунд...")
+    bot.reply_to(message, "⏳ Распознаю почерк через Google Gemini, подождите пару секунд...")
     
     image_path = "temp_blank.jpg"
     fixed_image_path = "fixed_blank.jpg"
@@ -51,14 +61,14 @@ def handle_photo(message):
         with open(image_path, 'wb') as new_file:
             new_file.write(downloaded_file)
 
-        # 2. Принудительно конвертируем в чистый JPG
+        # 2. Переводим в правильный формат JPEG
         img = Image.open(image_path)
         if img.mode != 'RGB':
             img = img.convert('RGB')
         img.save(fixed_image_path, "JPEG")
         
-        # 3. Открываем исправленное фото для отправки в Google
-        image_for_gemini = Image.open(fixed_image_path)
+        # 3. Кодируем картинку для отправки
+        base64_image = encode_image(fixed_image_path)
 
         prompt = """
         Внимательно посмотри на этот рукописный бланк заказа. Извлеки все заполненные от руки данные.
@@ -67,17 +77,30 @@ def handle_photo(message):
         Если какое-то поле не заполнено, оставь пустую строку "". Верни ТОЛЬКО чистый JSON, без лишнего текста.
         """
 
-        # 4. Отправляем запрос к модели Gemini
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=[prompt, image_for_gemini]
+        # 4. Отправляем запрос к Google Gemini через ProxyAPI
+        response = client.chat.completions.create(
+            model="gemini-1.5-flash",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{base64_image}"
+                            }
+                        }
+                    ]
+                }
+            ]
         )
         
-        text_response = response.text.strip()
-        print("\n--- РАСПОЗНАНО GOOGLE GEMINI ---")
+        text_response = response.choices[0].message.content.strip()
+        print("\n--- РАСПОЗНАНО ---")
         print(text_response)
         
-        # 5. Очищаем ответ от лишнего текста, оставляя только JSON
+        # 5. Очищаем ответ
         if "{" in text_response and "}" in text_response:
             start = text_response.find("{")
             end = text_response.rfind("}") + 1
@@ -85,7 +108,7 @@ def handle_photo(message):
             
         data = json.loads(text_response)
 
-        # 6. Вставляем данные в Word-шаблон
+        # 6. Заполняем документ
         doc = Document(TEMPLATE_PATH)
         for key, value in data.items():
             if not value:
@@ -107,7 +130,7 @@ def handle_photo(message):
         output_filename = "Готовый_бланк.docx"
         doc.save(output_filename)
 
-        # 7. Отправляем документ клиенту
+        # 7. Отправляем готовый файл в Телеграм
         with open(output_filename, 'rb') as doc_file:
             bot.send_document(message.chat.id, doc_file, caption="✅ Готово! Бланк заполнен.")
 
