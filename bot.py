@@ -5,9 +5,9 @@ from docx import Document
 from PIL import Image
 import json
 
-# Получаем токены из переменных окружения сервера (безопасный метод для GitHub и Render)
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "ВАШ_ТОКЕН_ТЕЛЕГРАМА")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "ВАШ_КЛЮЧ_GEMINI")
+# Ключи вставлены напрямую (репозиторий должен быть строго приватным!)
+TELEGRAM_TOKEN = "8870247392:AAH6YYzeFASFwynU4DaPLPC_AjdDswsXItg"
+GEMINI_API_KEY = "AQ.Ab8RN6LapOSCfx1ZsroC7Jvg3xSJ9-dyl5zQ9KHbSz8ZWVlD7A"
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 client = genai.Client(api_key=GEMINI_API_KEY)
@@ -15,7 +15,7 @@ TEMPLATE_PATH = "Бланк автоматической загрузки.docx"
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    bot.reply_to(message, "Бот успешно запущен на сервере! Пришлите фото заполненного бланка.")
+    bot.reply_to(message, "Бот успешно запущен в облаке! Пришлите фото заполненного бланка.")
 
 @bot.message_handler(content_types=['photo'])
 def handle_photo(message):
@@ -30,7 +30,7 @@ def handle_photo(message):
         with open(image_path, 'wb') as new_file:
             new_file.write(downloaded_file)
 
-        # 2. Принудительно конвертируем в чистый JPG (решает проблему с ошибками форматов)
+        # 2. Принудительно конвертируем в чистый JPG
         img = Image.open(image_path)
         if img.mode != 'RGB':
             img = img.convert('RGB')
@@ -46,7 +46,7 @@ def handle_photo(message):
         Если какое-то поле не заполнено, оставь пустую строку "". Верни ТОЛЬКО чистый JSON, без лишнего текста.
         """
 
-        # 4. Отправляем запрос к мощной модели Gemini
+        # 4. Отправляем запрос к модели Gemini
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=[prompt, image_for_gemini]
@@ -94,7 +94,6 @@ def handle_photo(message):
         bot.reply_to(message, f"❌ Произошла ошибка: {e}")
         print(f"ОШИБКА: {e}")
     finally:
-        # Удаляем временные файлы, чтобы не засорять сервер
         if os.path.exists(image_path):
             os.remove(image_path)
         if os.path.exists(fixed_image_path):
