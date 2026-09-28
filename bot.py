@@ -14,7 +14,7 @@ PROXY_API_KEY = "sk-heg3NF6rDU1VdDOMexnLkGriDfevyw0C"
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
-# Подключаемся к ProxyAPI (запросы пойдут в Google без VPN)
+# Подключаемся к ProxyAPI 
 client = OpenAI(
     api_key=PROXY_API_KEY,
     base_url="https://api.proxyapi.ru/openai/v1"
@@ -50,7 +50,7 @@ def send_welcome(message):
 
 @bot.message_handler(content_types=['photo'])
 def handle_photo(message):
-    bot.reply_to(message, "⏳ Распознаю почерк через Google Gemini, подождите пару секунд...")
+    bot.reply_to(message, "⏳ Распознаю почерк через GPT-4o, подождите пару секунд...")
     
     image_path = "temp_blank.jpg"
     fixed_image_path = "fixed_blank.jpg"
@@ -77,9 +77,9 @@ def handle_photo(message):
         Если какое-то поле не заполнено, оставь пустую строку "". Верни ТОЛЬКО чистый JSON, без лишнего текста.
         """
 
-        # 4. Отправляем запрос к Google Gemini через ProxyAPI
+        # 4. Отправляем запрос к GPT-4o через ProxyAPI
         response = client.chat.completions.create(
-            model="gemini-1.5-flash",
+            model="gpt-4o",
             messages=[
                 {
                     "role": "user",
